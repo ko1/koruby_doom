@@ -6,7 +6,7 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 if (!isMainThread) {
   const { mod, rom, src, argv, ctlBuf, fbBuf, palBuf } = workerData;
   const { runGuest } = await import('../run.js');
-  await runGuest({ mod, rom, src, argv, mount: '/c8', romName: 'rom.ch8', frameBytes: FRAME,
+  await runGuest({ mod, rom, src, argv, mount: '/c8', romName: 'rom.ch8', frameBytes: FRAME, inputBytes: 2,
                    ctlBuf, fbBuf, palBuf, log: l => console.log('[guest]', l) });
 } else {
   const frames = Number(process.argv[2] || 150);

@@ -109,7 +109,7 @@ function draw() {
   if (now - lastT > 500) {
     const fps = (drawn - lastN) * 1000 / (now - lastT);
     lastT = now; lastN = drawn;
-    stat.textContent = `${sel.label} — ${fps.toFixed(1)} fps — ${drawn} frames — 160x144`;
+    stat.textContent = `${sel.label} — ${fps.toFixed(1)} fps — ${drawn} frames — 384x736`;
   }
   let k = 0;
   for (const b of held) k |= 1 << b;

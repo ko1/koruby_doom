@@ -152,6 +152,7 @@ async function start(kind) {
     if (ev.data.exit !== undefined) { overlay.classList.remove('hidden'); overlay.textContent = `${sel.label}: 終了 (${ev.data.exit})`; }
   };
   worker.postMessage({ mod, rom: romBytes.slice(0), src: srcBytes, argv: sel.argv,
+                       inputBytes: 2,
                        mount: '/c8', romName: 'rom.ch8', frameBytes: FRAME,
                        ctlBuf, fbBuf, palBuf });
 }

@@ -14,14 +14,17 @@ import { WASI, File, PreopenDirectory, Fd, ConsoleStdout, WASIProcExit, wasi } f
 let FRAME_BYTES = 320 * 240;
 const PAL_BYTES = 768;
 
-// stdin: one command byte per host tick.
+// stdin: one command byte per host tick -- or two, for a guest with more than
+// eight keys (CHIP-8 has sixteen), which reads twice per tick.  `wide` has to be
+// told, not guessed: staging a high byte for a one-byte guest hands it that byte
+// as its *next* frame's input, so it sees the key on every other frame only and
+// a held key never registers as held.
 class TickStdin extends Fd {
-  constructor(ctl) { super(); this.ctl = ctl; this.seen = 0; }
+  constructor(ctl, wide) { super(); this.ctl = ctl; this.wide = !!wide; this.seen = 0; }
   fd_fdstat_get() { return { ret: 0, fdstat: new wasi.Fdstat(wasi.FILETYPE_CHARACTER_DEVICE, 0) }; }
   fd_read(size) {
     if (size === 0) return { ret: 0, data: new Uint8Array(0) };
-    // A guest that wants 16 bits of input reads twice; the second read must not
-    // wait for a new tick, so hand out the high byte of the tick just consumed.
+    // The second read of a wide tick must not wait for a new one.
     if (this.pending !== undefined) {
       const hi = this.pending; this.pending = undefined;
       return { ret: 0, data: new Uint8Array([hi]) };
@@ -29,7 +32,7 @@ class TickStdin extends Fd {
     while (Atomics.load(this.ctl, 0) === this.seen) Atomics.wait(this.ctl, 0, this.seen);
     this.seen = Atomics.load(this.ctl, 0);
     const v = Atomics.load(this.ctl, 1);
-    this.pending = (v >> 8) & 0xff;
+    if (this.wide) this.pending = (v >> 8) & 0xff;
     return { ret: 0, data: new Uint8Array([v & 0xff]) };
   }
 }
@@ -71,13 +74,13 @@ class FrameStdout extends Fd {
 // then run as `koruby --plain /doom/doom_web.rb`); the AOT modules carry the
 // program inside and ignore it.
 export async function runGuest({ mod, rom, src, argv, mount, romName, frameBytes,
-                                ctlBuf, fbBuf, palBuf, log, ready }) {
+                                inputBytes, ctlBuf, fbBuf, palBuf, log, ready }) {
   FRAME_BYTES = frameBytes || 320 * 240;
   const ctl = new Int32Array(ctlBuf);
   const fb = new Uint8Array(fbBuf);
   const pal = new Uint8Array(palBuf);
   const fds = [
-    new TickStdin(ctl),
+    new TickStdin(ctl, inputBytes === 2),
     new FrameStdout(ctl, fb, pal),
     ConsoleStdout.lineBuffered(l => log && log(l)),
     new PreopenDirectory(mount || '/doom', new Map([

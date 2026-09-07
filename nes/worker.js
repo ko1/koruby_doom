@@ -1,11 +1,11 @@
-// Browser Worker glue for the Game Boy page; the runner is shared with DOOM.
+// Browser Worker glue for the NES page; the runner is shared with DOOM.
 import { runGuest } from '../run.js';
 
 onmessage = async (ev) => {
-  const { mod, rom, src, argv, mount, romName, frameBytes, ctlBuf, fbBuf, palBuf } = ev.data;
+  const { mod, rom, src, argv, mount, romName, frameBytes, inputBytes, ctlBuf, fbBuf, palBuf } = ev.data;
   try {
     const rc = await runGuest({
-      mod, rom, src, argv, mount, romName, frameBytes, ctlBuf, fbBuf, palBuf,
+      mod, rom, src, argv, mount, romName, frameBytes, inputBytes, ctlBuf, fbBuf, palBuf,
       log: l => postMessage({ log: l }),
       ready: () => postMessage({ ready: true }),
     });
