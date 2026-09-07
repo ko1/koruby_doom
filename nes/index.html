@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>Game Boy in pure Ruby, AOT-compiled, in the browser</title>
+<title>NES in pure Ruby, AOT-compiled, in the browser</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; background: #0b0b0d; color: #ddd;
@@ -10,7 +10,7 @@
          align-items: center; gap: 1rem; padding: 1.5rem 1rem 3rem; }
   h1 { font-size: 1.15rem; font-weight: 600; margin: 0; letter-spacing: .02em; }
   #wrap { position: relative; }
-  canvas { width: 640px; max-width: 92vw; aspect-ratio: 160 / 144; display: block;
+  canvas { width: 768px; max-width: 92vw; aspect-ratio: 256 / 240; display: block;
            image-rendering: pixelated; background: #000; border: 1px solid #333; }
   #overlay { position: absolute; inset: 0; display: grid; place-items: center;
              background: rgba(0,0,0,.72); font-size: .95rem; text-align: center;
@@ -25,7 +25,7 @@
 </style>
 </head>
 <body>
-<h1>Game Boy — pure Ruby, AOT-compiled by ASTro, running in the browser</h1>
+<h1>NES — pure Ruby, AOT-compiled by ASTro, running in the browser</h1>
 <div id="wrap">
   <canvas id="screen" width="160" height="144"></canvas>
   <div id="overlay">読み込み中…</div>
@@ -44,17 +44,18 @@
 </div>
 <div id="stat">—</div>
 <div class="row" style="max-width: 60rem; display: block; text-align: center; line-height: 1.8">
-  エミュレータは <a href="https://github.com/sacckey/rubyboy">rubyboy</a> — Game Boy を
+  エミュレータは <a href="https://github.com/r7kamura/rnes">rnes</a> — NES を
   純粋な Ruby で実装したもの (MIT)。ROM は
-  <a href="https://github.com/SimonLarsen/tobu-tobu-girl">Tobu Tobu Girl</a>、
-  自由に配布できる homebrew です。
-  DOOM のページと同じ仕組みで動いています —
-  <a href="../">DOOM</a> と <a href="../nes/">NES</a> もどうぞ。
+  <a href="http://www.romhacking.net/homebrew/2/">Lan Master</a>、Public domain の
+  homebrew です。<a href="https://github.com/mame/optcarrot">optcarrot</a> ではなく
+  rnes を使っているのは、optcarrot の PPU が Fiber で CPU と協調していて、
+  koruby の wasm 移植が Fiber を持たないためです。
+  ほかに <a href="../">DOOM</a> と <a href="../gb/">Game Boy</a> もあります。
 </div>
 
 <script src="../coi-serviceworker.js"></script>
 <script type="module">
-const W = 160, H = 144, FRAME = W * H * 4;   // Game Boy の buffer は 32bit 色
+const W = 256, H = 240, FRAME = W * H * 3;   // rnes は RGB を直接書く
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d', { alpha: false });
 const img = ctx.createImageData(W, H);
@@ -75,18 +76,19 @@ const ctl = new Int32Array(ctlBuf);
 const fb  = new Uint8Array(fbBuf);
 
 // bit 0..3 = Right Left Up Down, bit 4..7 = A B Select Start (pressed = 1).
-const BITS = { ArrowRight: 0, ArrowLeft: 1, ArrowUp: 2, ArrowDown: 3,
-               KeyZ: 4, KeyX: 5, ShiftLeft: 6, ShiftRight: 6, Enter: 7 };
+// rnes の keypad ビット順
+const BITS = { ArrowRight: 0, ArrowLeft: 1, ArrowDown: 2, ArrowUp: 3,
+               Enter: 4, ShiftLeft: 5, ShiftRight: 5, KeyX: 6, KeyZ: 7 };
 const held = new Set();
 addEventListener('keydown', e => { if (e.code in BITS) { held.add(BITS[e.code]); e.preventDefault(); } });
 addEventListener('keyup',   e => { if (e.code in BITS) { held.delete(BITS[e.code]); e.preventDefault(); } });
 
 const BUILDS = {
-  new:    { wasm: 'gb.wasm', label: 'koruby AOT' },
-  interp: { wasm: '../koruby-interp.wasm', label: 'koruby インタプリタ', src: 'gb_web.rb',
-            argv: ['koruby', '--plain', '/gb/gb_web.rb'] },
-  ruby:   { wasm: '../ruby.wasm', label: 'ruby.wasm (CRuby 3.4)', src: 'gb_web.rb',
-            argv: ['ruby', '/gb/gb_web.rb'] },
+  new:    { wasm: 'nes.wasm', label: 'koruby AOT' },
+  interp: { wasm: '../koruby-interp.wasm', label: 'koruby インタプリタ', src: 'nes_web.rb',
+            argv: ['koruby', '--plain', '/gb/nes_web.rb'] },
+  ruby:   { wasm: '../ruby.wasm', label: 'ruby.wasm (CRuby 3.4)', src: 'nes_web.rb',
+            argv: ['ruby', '/gb/nes_web.rb'] },
 };
 
 let worker = null, romBytes = null, rafId = 0, sel = BUILDS.new, current = 'new';
@@ -96,7 +98,10 @@ function draw() {
   const n = Atomics.load(ctl, 2);
   if (n !== drawn) {
     drawn = n;
-    img.data.set(fb);                       // 0xAARRGGBB little-endian == RGBA bytes
+    const d = img.data;                     // RGB -> RGBA
+    for (let p = 0, q = 0; p < FRAME; p += 3, q += 4) {
+      d[q] = fb[p]; d[q + 1] = fb[p + 1]; d[q + 2] = fb[p + 2]; d[q + 3] = 255;
+    }
     ctx.putImageData(img, 0, 0);
     overlay.classList.add('hidden');
   }
@@ -108,7 +113,7 @@ function draw() {
   }
   let k = 0;
   for (const b of held) k |= 1 << b;
-  if (k === 0xfe) k = 0;                    // 0xfe is the quit byte
+  if (k === 0xff) k = 0;                    // 0xff is the quit byte
   Atomics.store(ctl, 1, k);
   Atomics.add(ctl, 0, 1);
   Atomics.notify(ctl, 0);
@@ -126,7 +131,7 @@ async function start(kind) {
   overlay.textContent = `${sel.label}: wasm を取得中…`;
 
   const grab = (u) => fetch(u, { cache: 'no-cache' }).then(r => r.arrayBuffer());
-  if (!romBytes) romBytes = await grab('rom.gb');
+  if (!romBytes) romBytes = await grab('rom.nes');
   const [wasmBytes, srcBytes] = await Promise.all([
     grab(sel.wasm),
     sel.src ? grab(sel.src) : Promise.resolve(null),
@@ -142,7 +147,7 @@ async function start(kind) {
     if (ev.data.exit !== undefined) { overlay.classList.remove('hidden'); overlay.textContent = `${sel.label}: 終了 (${ev.data.exit})`; }
   };
   worker.postMessage({ mod, rom: romBytes.slice(0), src: srcBytes, argv: sel.argv,
-                       mount: '/gb', romName: 'rom.gb', frameBytes: FRAME,
+                       mount: '/nes', romName: 'rom.nes', frameBytes: FRAME,
                        ctlBuf, fbBuf, palBuf });
 }
 

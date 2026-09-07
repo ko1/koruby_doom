@@ -9,6 +9,7 @@
 |---|---|---|
 | **DOOM** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/)** | [khasinski/doom](https://github.com/khasinski/doom) — DOOM (1993) の純 Ruby 移植 |
 | **Game Boy** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/gb/)** | [sacckey/rubyboy](https://github.com/sacckey/rubyboy) — 純 Ruby の Game Boy エミュレータ |
+| **NES** | 👉 **[見る](https://ko1.github.io/koruby_doom/nes/)** | [r7kamura/rnes](https://github.com/r7kamura/rnes) — 純 Ruby の NES エミュレータ (3 fps、遊べる速さではない) |
 
 DOOM: `W` `S` 前後 / `A` `D` 横移動 / `←` `→` 旋回
 Game Boy: `←` `→` `↑` `↓` 十字 / `Z` A / `X` B / `Enter` Start / `Shift` Select
@@ -186,6 +187,7 @@ cp ../rubyharness/apps/doom/doom1.wad <このディレクトリ>/
 | `doom_web.rb` | バンドル済みの DOOM (インタプリタと ruby.wasm 用) |
 | `run.js` | 2 つの fd と WASI の設定 (DOOM と Game Boy で共有) |
 | `gb/` | Game Boy 版 (rubyboy + Tobu Tobu Girl) |
+| `nes/` | NES 版 (rnes + Lan Master) |
 | `shim/` | [@bjorn3/browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) |
 | `coi-serviceworker.js` | ヘッダを設定できないホスト向け |
 | `serve.py` | ローカル用 (COOP/COEP を返す) |
@@ -235,6 +237,26 @@ ROM は [Tobu Tobu Girl](https://github.com/SimonLarsen/tobu-tobu-girl)、
 Game Boy では **ruby.wasm がインタプリタより速い**という逆転が出ています。
 DOOM とは逆で、まだ理由を追っていません。
 
+## NES 版 (`nes/`) — 動くが遅い
+
+エミュレータは [rnes](https://github.com/r7kamura/rnes) (MIT)。
+[optcarrot](https://github.com/mame/optcarrot) ではありません。**optcarrot の PPU は
+Fiber で CPU と協調していて、koruby の wasm 移植は Fiber を持たない**からです
+(`Fiber.new` で即落ちる)。ネイティブなら optcarrot も AOT で動きます。
+
+rnes 側に要ったのは小さなフックだけです。`PartsFactory#renderer` が返す
+オブジェクトの `render` は PPU が 1 フレームにつき 1 回呼ぶので、そこにフラグを
+立てるだけでフレームの完成を捕まえられます。`Keypad#check` は STDIN を直接
+読むので無効化し、代わりに `@buffer` へビットを直接入れます。
+
+罠: rnes は Ruby 2 時代のコードで、`Operation.build` が `new(record)` と書いて
+Hash の自動キーワード展開に頼っています。Ruby 3 では通らないのでバンドル側で
+当て直しています。
+
+**速度**: AOT で 40 フレーム 12.09 秒 = **3.3 fps**。rnes は optcarrot と違って
+最適化されていないので、遊べる速さではありません。出力が CRuby と
+バイト単位で完全一致することは確認済みです。
+
 ## 出どころ
 
 | | |
@@ -245,4 +267,6 @@ DOOM とは逆で、まだ理由を追っていません。
 | ruby.wasm | [ruby/ruby.wasm](https://github.com/ruby/ruby.wasm) 2.10.1 の wasip1-minimal ビルド |
 | Game Boy エミュレータ | [sacckey/rubyboy](https://github.com/sacckey/rubyboy) — MIT |
 | `gb/rom.gb` | [Tobu Tobu Girl](https://github.com/SimonLarsen/tobu-tobu-girl) — 自由に配布できる homebrew |
+| NES エミュレータ | [r7kamura/rnes](https://github.com/r7kamura/rnes) — MIT |
+| `nes/rom.nes` | [Lan Master](http://www.romhacking.net/homebrew/2/) — Public domain |
 | `doom1.wad` | id Software の DOOM シェアウェア WAD (Episode 1) |
