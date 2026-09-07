@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>Game Boy in pure Ruby, AOT-compiled, in the browser</title>
+<title>CHIP-8 in pure Ruby, AOT-compiled, in the browser</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; background: #0b0b0d; color: #ddd;
@@ -10,7 +10,7 @@
          align-items: center; gap: 1rem; padding: 1.5rem 1rem 3rem; }
   h1 { font-size: 1.15rem; font-weight: 600; margin: 0; letter-spacing: .02em; }
   #wrap { position: relative; }
-  canvas { width: 640px; max-width: 92vw; aspect-ratio: 160 / 144; display: block;
+  canvas { width: 768px; max-width: 92vw; aspect-ratio: 64 / 32; display: block;
            image-rendering: pixelated; background: #000; border: 1px solid #333; }
   #overlay { position: absolute; inset: 0; display: grid; place-items: center;
              background: rgba(0,0,0,.72); font-size: .95rem; text-align: center;
@@ -25,17 +25,16 @@
 </style>
 </head>
 <body>
-<h1>Game Boy — pure Ruby, AOT-compiled by ASTro, running in the browser</h1>
+<h1>CHIP-8 — pure Ruby, AOT-compiled by ASTro, running in the browser</h1>
 <div id="wrap">
-  <canvas id="screen" width="160" height="144"></canvas>
+  <canvas id="screen" width="64" height="32"></canvas>
   <div id="overlay">読み込み中…</div>
 </div>
 <div class="row">
-  <span><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 十字キー</span>
-  <span><kbd>Z</kbd> A</span>
-  <span><kbd>X</kbd> B</span>
-  <span><kbd>Enter</kbd> Start</span>
-  <span><kbd>Shift</kbd> Select</span>
+  <span>キーパッドは <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> / <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd> / <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd> / <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd></span>
+</div>
+<div class="row">
+  <label>ROM <select id="rom"></select></label>
 </div>
 <div class="row" id="pick">
   <label><input type="radio" name="build" value="new" checked> koruby AOT</label>
@@ -44,17 +43,16 @@
 </div>
 <div id="stat">—</div>
 <div class="row" style="max-width: 60rem; display: block; text-align: center; line-height: 1.8">
-  エミュレータは <a href="https://github.com/sacckey/rubyboy">rubyboy</a> — Game Boy を
-  純粋な Ruby で実装したもの (MIT)。ROM は
-  <a href="https://github.com/SimonLarsen/tobu-tobu-girl">Tobu Tobu Girl</a>、
-  自由に配布できる homebrew です。
-  DOOM のページと同じ仕組みで動いています —
-  <a href="../">DOOM</a>、<a href="../nes/">NES</a>、<a href="../c8/">CHIP-8</a> もどうぞ。
+  CHIP-8 の解釈系はこのリポジトリで書いたものです (64x32、SUPER-CHIP なし)。
+  ROM は <a href="https://github.com/JohnEarnest/Octo">Octo</a> (MIT) の
+  examples を Octo 自身のアセンブラで組んだものです。
+  ほかに <a href="../">DOOM</a>、<a href="../gb/">Game Boy</a>、
+  <a href="../nes/">NES</a> もあります。
 </div>
 
 <script src="../coi-serviceworker.js"></script>
 <script type="module">
-const W = 160, H = 144, FRAME = W * H * 4;   // Game Boy の buffer は 32bit 色
+const W = 64, H = 32, FRAME = W * H;         // 1 バイト 1 ピクセル (0 か 1)
 const cv = document.getElementById('screen');
 const ctx = cv.getContext('2d', { alpha: false });
 const img = ctx.createImageData(W, H);
@@ -74,21 +72,29 @@ const palBuf = new SharedArrayBuffer(768);
 const ctl = new Int32Array(ctlBuf);
 const fb  = new Uint8Array(fbBuf);
 
-// bit 0..3 = Right Left Up Down, bit 4..7 = A B Select Start (pressed = 1).
-const BITS = { ArrowRight: 0, ArrowLeft: 1, ArrowUp: 2, ArrowDown: 3,
-               KeyZ: 4, KeyX: 5, ShiftLeft: 6, ShiftRight: 6, Enter: 7 };
+// 16 キーのビット位置。よくある QWERTY への割り当て。
+const BITS = { Digit1: 0x1, Digit2: 0x2, Digit3: 0x3, Digit4: 0xC,
+               KeyQ: 0x4, KeyW: 0x5, KeyE: 0x6, KeyR: 0xD,
+               KeyA: 0x7, KeyS: 0x8, KeyD: 0x9, KeyF: 0xE,
+               KeyZ: 0xA, KeyX: 0x0, KeyC: 0xB, KeyV: 0xF };
 const held = new Set();
 addEventListener('keydown', e => { if (e.code in BITS) { held.add(BITS[e.code]); e.preventDefault(); } });
 addEventListener('keyup',   e => { if (e.code in BITS) { held.delete(BITS[e.code]); e.preventDefault(); } });
 
 const BUILDS = {
-  new:    { wasm: 'gb.wasm', label: 'koruby AOT' },
-  interp: { wasm: '../koruby-interp.wasm', label: 'koruby インタプリタ', src: 'gb_web.rb',
-            argv: ['koruby', '--plain', '/gb/gb_web.rb'] },
-  ruby:   { wasm: '../ruby.wasm', label: 'ruby.wasm (CRuby 3.4)', src: 'gb_web.rb',
-            argv: ['ruby', '/gb/gb_web.rb'] },
+  new:    { wasm: 'c8.wasm', label: 'koruby AOT' },
+  interp: { wasm: '../koruby-interp.wasm', label: 'koruby インタプリタ', src: 'c8_web.rb',
+            argv: ['koruby', '--plain', '/c8/c8_web.rb'] },
+  ruby:   { wasm: '../ruby.wasm', label: 'ruby.wasm (CRuby 3.4)', src: 'c8_web.rb',
+            argv: ['ruby', '/c8/c8_web.rb'] },
 };
 
+const ROMS = ['outlaw', 'caveexplorer', 'snowdaze', 'chipwar', 'slippery', 'eaty',
+              'sweetcopter', 'deep8', 'fuse', 'mirror'];
+let romName = ROMS[0] + '.ch8';
+const romSel = document.getElementById('rom');
+romSel.innerHTML = ROMS.map(r => `<option value="${r}.ch8">${r}</option>`).join('');
+romSel.addEventListener('change', () => { romName = romSel.value; start(current); });
 let worker = null, romBytes = null, rafId = 0, sel = BUILDS.new, current = 'new';
 let drawn = 0, lastT = 0, lastN = 0;
 
@@ -96,7 +102,12 @@ function draw() {
   const n = Atomics.load(ctl, 2);
   if (n !== drawn) {
     drawn = n;
-    img.data.set(fb);                       // 0xAARRGGBB little-endian == RGBA bytes
+    const d = img.data;                     // 0/1 -> 前景色/背景色
+    for (let p = 0, q = 0; p < FRAME; p++, q += 4) {
+      const on = fb[p];
+      d[q] = on ? 0xff : 0x11; d[q + 1] = on ? 0xaa : 0x11;
+      d[q + 2] = on ? 0x33 : 0x14; d[q + 3] = 255;
+    }
     ctx.putImageData(img, 0, 0);
     overlay.classList.add('hidden');
   }
@@ -108,8 +119,7 @@ function draw() {
   }
   let k = 0;
   for (const b of held) k |= 1 << b;
-  if (k === 0xfe) k = 0;                    // 0xfe is the quit byte
-  Atomics.store(ctl, 1, k);
+  Atomics.store(ctl, 1, k & 0xffff);        // 16 キー。ゲスト側で 2 バイトに割る
   Atomics.add(ctl, 0, 1);
   Atomics.notify(ctl, 0);
   rafId = requestAnimationFrame(draw);
@@ -126,7 +136,7 @@ async function start(kind) {
   overlay.textContent = `${sel.label}: wasm を取得中…`;
 
   const grab = (u) => fetch(u, { cache: 'no-cache' }).then(r => r.arrayBuffer());
-  if (!romBytes) romBytes = await grab('rom.gb');
+  romBytes = await grab('roms/' + romName);
   const [wasmBytes, srcBytes] = await Promise.all([
     grab(sel.wasm),
     sel.src ? grab(sel.src) : Promise.resolve(null),
@@ -142,7 +152,7 @@ async function start(kind) {
     if (ev.data.exit !== undefined) { overlay.classList.remove('hidden'); overlay.textContent = `${sel.label}: 終了 (${ev.data.exit})`; }
   };
   worker.postMessage({ mod, rom: romBytes.slice(0), src: srcBytes, argv: sel.argv,
-                       mount: '/gb', romName: 'rom.gb', frameBytes: FRAME,
+                       mount: '/c8', romName: 'rom.ch8', frameBytes: FRAME,
                        ctlBuf, fbBuf, palBuf });
 }
 

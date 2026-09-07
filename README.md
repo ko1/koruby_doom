@@ -10,6 +10,7 @@
 | **DOOM** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/)** | [khasinski/doom](https://github.com/khasinski/doom) — DOOM (1993) の純 Ruby 移植 |
 | **Game Boy** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/gb/)** | [sacckey/rubyboy](https://github.com/sacckey/rubyboy) — 純 Ruby の Game Boy エミュレータ |
 | **NES** | 👉 **[見る](https://ko1.github.io/koruby_doom/nes/)** | [r7kamura/rnes](https://github.com/r7kamura/rnes) — 純 Ruby の NES エミュレータ (3 fps、遊べる速さではない) |
+| **CHIP-8** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/c8/)** | このリポジトリで書いた解釈系。ROM 10 本を切り替えられる |
 
 DOOM: `W` `S` 前後 / `A` `D` 横移動 / `←` `→` 旋回
 Game Boy: `←` `→` `↑` `↓` 十字 / `Z` A / `X` B / `Enter` Start / `Shift` Select
@@ -188,6 +189,7 @@ cp ../rubyharness/apps/doom/doom1.wad <このディレクトリ>/
 | `run.js` | 2 つの fd と WASI の設定 (DOOM と Game Boy で共有) |
 | `gb/` | Game Boy 版 (rubyboy + Tobu Tobu Girl) |
 | `nes/` | NES 版 (rnes + Lan Master) |
+| `c8/` | CHIP-8 版 (自前の解釈系 + Octo の examples) |
 | `shim/` | [@bjorn3/browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) |
 | `coi-serviceworker.js` | ヘッダを設定できないホスト向け |
 | `serve.py` | ローカル用 (COOP/COEP を返す) |
@@ -257,6 +259,22 @@ Hash の自動キーワード展開に頼っています。Ruby 3 では通ら�
 最適化されていないので、遊べる速さではありません。出力が CRuby と
 バイト単位で完全一致することは確認済みです。
 
+## CHIP-8 版 (`c8/`)
+
+解釈系はこのリポジトリで書きました。CHIP-8 は 4 KB のメモリ、16 本の 8 bit
+レジスタ、64x32 の白黒画面、2 本の 60 Hz タイマ、16 キーのキーパッドだけなので、
+借りてくるより書くほうが早く、由来も単純になります。SUPER-CHIP は未実装です。
+
+ROM は [Octo](https://github.com/JohnEarnest/Octo) (MIT) の `examples/` を
+Octo 自身のアセンブラで組んだものです。ページ上で 10 本を切り替えられます。
+
+入力だけ他と違って 16 ビットあるので、ホストは 1 tick に 2 バイト渡します
+(`run.js` の stdin が 2 回目の read で上位バイトを返す)。
+
+**速度**: 150 フレームで AOT 0.27 s、インタプリタ 0.17 s、ruby.wasm 0.23 s。
+**インタプリタが AOT より速い**のは、CHIP-8 が軽すぎてモジュールの
+インスタンス化 (13 MB 対 4.3 MB) が支配的になるためです。
+
 ## 出どころ
 
 | | |
@@ -269,4 +287,5 @@ Hash の自動キーワード展開に頼っています。Ruby 3 では通ら�
 | `gb/rom.gb` | [Tobu Tobu Girl](https://github.com/SimonLarsen/tobu-tobu-girl) — 自由に配布できる homebrew |
 | NES エミュレータ | [r7kamura/rnes](https://github.com/r7kamura/rnes) — MIT |
 | `nes/rom.nes` | [Lan Master](http://www.romhacking.net/homebrew/2/) — Public domain |
+| `c8/roms/*.ch8` | [Octo](https://github.com/JohnEarnest/Octo) の examples — MIT |
 | `doom1.wad` | id Software の DOOM シェアウェア WAD (Episode 1) |

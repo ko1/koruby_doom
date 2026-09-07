@@ -20,10 +20,17 @@ class TickStdin extends Fd {
   fd_fdstat_get() { return { ret: 0, fdstat: new wasi.Fdstat(wasi.FILETYPE_CHARACTER_DEVICE, 0) }; }
   fd_read(size) {
     if (size === 0) return { ret: 0, data: new Uint8Array(0) };
-    // Wait for a tick we have not consumed yet.
+    // A guest that wants 16 bits of input reads twice; the second read must not
+    // wait for a new tick, so hand out the high byte of the tick just consumed.
+    if (this.pending !== undefined) {
+      const hi = this.pending; this.pending = undefined;
+      return { ret: 0, data: new Uint8Array([hi]) };
+    }
     while (Atomics.load(this.ctl, 0) === this.seen) Atomics.wait(this.ctl, 0, this.seen);
     this.seen = Atomics.load(this.ctl, 0);
-    return { ret: 0, data: new Uint8Array([Atomics.load(this.ctl, 1)]) };
+    const v = Atomics.load(this.ctl, 1);
+    this.pending = (v >> 8) & 0xff;
+    return { ret: 0, data: new Uint8Array([v & 0xff]) };
   }
 }
 
