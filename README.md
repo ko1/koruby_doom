@@ -11,6 +11,7 @@
 | **Game Boy** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/gb/)** | [sacckey/rubyboy](https://github.com/sacckey/rubyboy) — 純 Ruby の Game Boy エミュレータ |
 | **NES** | 👉 **[見る](https://ko1.github.io/koruby_doom/nes/)** | [r7kamura/rnes](https://github.com/r7kamura/rnes) — 純 Ruby の NES エミュレータ (3 fps、遊べる速さではない) |
 | **CHIP-8** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/c8/)** | このリポジトリで書いた解釈系。ROM 10 本を切り替えられる |
+| **rbTris** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/tetris/)** | [Nakilon/rbtris](https://github.com/Nakilon/rbtris) — Ruby2D のゲームを SDL 抜きで |
 
 DOOM: `W` `S` 前後 / `A` `D` 横移動 / `←` `→` 旋回
 Game Boy: `←` `→` `↑` `↓` 十字 / `Z` A / `X` B / `Enter` Start / `Shift` Select
@@ -179,6 +180,15 @@ cp ../rubyharness/apps/doom/doom1.wad <このディレクトリ>/
 `doom_web.sh` はヘッドレスの `doom.sh` と同じエンジン一式をバンドルし、末尾だけを
 「固定レンダ + checksum」から「フレームループ」に差し替えます。
 
+他の 4 つも同じ形です (バンドラは `sample/koruby_precise/tools/`)。
+
+```sh
+ROM=/gb/rom.gb  OUT=/tmp/gb_web.rb  sh tools/rubyboy_web.sh
+ROM=/nes/rom.nes OUT=/tmp/nes_web.rb sh tools/rnes_web.sh
+ROM=/c8/rom.ch8 OUT=/tmp/c8_web.rb  sh tools/chip8_web.sh
+RBTRIS=/path/to/rbtris OUT=/tmp/rbt_web.rb sh tools/rbtris_web.sh
+```
+
 ## ファイル
 
 | | |
@@ -190,6 +200,7 @@ cp ../rubyharness/apps/doom/doom1.wad <このディレクトリ>/
 | `gb/` | Game Boy 版 (rubyboy + Tobu Tobu Girl) |
 | `nes/` | NES 版 (rnes + Lan Master) |
 | `c8/` | CHIP-8 版 (自前の解釈系 + Octo の examples) |
+| `tetris/` | rbTris (Ruby2D shim) |
 | `shim/` | [@bjorn3/browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) |
 | `coi-serviceworker.js` | ヘッダを設定できないホスト向け |
 | `serve.py` | ローカル用 (COOP/COEP を返す) |
@@ -275,6 +286,39 @@ Octo 自身のアセンブラで組んだものです。ページ上で 10 本�
 **インタプリタが AOT より速い**のは、CHIP-8 が軽すぎてモジュールの
 インスタンス化 (13 MB 対 4.3 MB) が支配的になるためです。
 
+## rbTris (`tetris/`) — Ruby2D を Canvas に載せ替える
+
+ここまでの 4 つは「Ruby で書かれた別のプログラムを動かすもの」でしたが、
+これは **Ruby で書かれたゲームそのもの**です。
+
+[rbTris](https://github.com/Nakilon/rbtris) (MIT、196 行) は
+[Ruby2D](https://www.ruby2d.com/) のゲームです。Ruby2D は SDL に C 拡張で繋ぐので、
+koruby (C 拡張なし) でも wasm (dlopen なし) でもロードできません。ただし
+**API 自体はネイティブではありません** — 図形のリストを描画側が走査するだけです。
+
+そこで `tools/ruby2d_shim.rb` に同名の純 Ruby モジュールを置き、図形を
+フレームバッファにラスタライズしています。実装したのは `set`、`Window.update`、
+`Window.on(:key_down / :key_held / :key_up)`、`Window.width / height / frames`、
+`Rectangle`、`Square`、`Text`、`Font.path`、`show` だけで、rbTris が触るのは
+この 8 種類でした。文字は 5x7 のビットマップフォントを内蔵しています。
+
+**ゲーム本体は 1 行も変えていません。** バンドラが外すのは、先頭のフォント
+ダウンロード (`open-uri` と `zip` が要る) と `require "ruby2d"` の 2 行だけです。
+`Mutex` と `Dir.home` は shim 側で用意しています (wasm に HOME は無い)。
+
+**速度** (`tetris/test_node.mjs` で 20 フレーム、Node 上):
+
+| | 20 フレーム | fps 換算 |
+|---|---|---|
+| koruby インタプリタ | 5.38 s | 3.7 |
+| ruby.wasm 3.4.1 | 4.89 s | 4.1 |
+| **koruby AOT** | **0.97 s** | **20.6** |
+
+ここだけ ruby.wasm が koruby インタプリタより速いのは、負荷の中身が
+DOOM とは違うためです。画面が 384x736 と大きく、時間のほとんどは shim の
+ラスタライズ (`fill_rect` の素の Ruby ループ) に行きます。AOT はそこが
+効いて 5.5 倍。
+
 ## 出どころ
 
 | | |
@@ -288,4 +332,5 @@ Octo 自身のアセンブラで組んだものです。ページ上で 10 本�
 | NES エミュレータ | [r7kamura/rnes](https://github.com/r7kamura/rnes) — MIT |
 | `nes/rom.nes` | [Lan Master](http://www.romhacking.net/homebrew/2/) — Public domain |
 | `c8/roms/*.ch8` | [Octo](https://github.com/JohnEarnest/Octo) の examples — MIT |
+| rbTris | [Nakilon/rbtris](https://github.com/Nakilon/rbtris) — MIT |
 | `doom1.wad` | id Software の DOOM シェアウェア WAD (Episode 1) |
