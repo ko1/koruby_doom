@@ -135,10 +135,14 @@ async function start(kind) {
   overlay.classList.remove('hidden');
   overlay.textContent = `${b.label}: wasm を取得中…`;
 
-  if (!wadBytes) wadBytes = await fetch('doom1.wad').then(r => r.arrayBuffer());
+  // Revalidate rather than trust the cache: GitHub Pages sends max-age=600, so a
+  // plain fetch can hand back a stale 16 MB module for ten minutes after a
+  // deploy.  The ETag makes the check cheap — 304 when nothing changed.
+  const grab = (u) => fetch(u, { cache: 'no-cache' }).then(r => r.arrayBuffer());
+  if (!wadBytes) wadBytes = await grab('doom1.wad');
   const [wasmBytes, srcBytes] = await Promise.all([
-    fetch(b.wasm).then(r => r.arrayBuffer()),
-    b.src ? fetch(b.src).then(r => r.arrayBuffer()) : Promise.resolve(null),
+    grab(b.wasm),
+    b.src ? grab(b.src) : Promise.resolve(null),
   ]);
   overlay.textContent = `${b.label}: wasm をコンパイル中…`;
   const mod = await WebAssembly.compile(wasmBytes);

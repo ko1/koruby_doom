@@ -184,6 +184,18 @@ cp ../rubyharness/apps/doom/doom1.wad <このディレクトリ>/
 | `serve.py` | ローカル用 (COOP/COEP を返す) |
 | `test_node.mjs` | ブラウザ無しの確認 |
 
+## デプロイ後に古いものが出るとき
+
+ページは `.wasm` と WAD を `fetch(..., { cache: 'no-cache' })` で取ります。
+GitHub Pages が `max-age=600` を返すので、素の `fetch` だとデプロイ後 10 分は
+古い 16 MB のモジュールが返り得るためです。ETag があるので、変わっていなければ
+304 で済みます。
+
+それでも古いままなら service worker が残っています。DevTools の
+Application → Service Workers で Unregister、Storage → Clear site data、
+そのあとリロードしてください。`Ctrl+Shift+R` は、ページが JS の `fetch()` で
+取っているぶんには効かないことがあります。
+
 ## 既知の不具合
 
 wasm32 では 64 ビットの符号なしリテラルが負になります
