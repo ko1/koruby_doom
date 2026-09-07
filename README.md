@@ -44,8 +44,10 @@ python3 serve.py            # http://127.0.0.1:8000/
   丸ごと置けばページを覆う
 - `.nojekyll` を同梱済み (`_headers` のような下線始まりを Jekyll に無視させないため)
 
-**未確認**: ブラウザが手元に無いので、service worker が実際に cross-origin isolation を
-成立させるところだけは目で見ていない。駄目な場合は上記のメッセージが出る。
+**動作確認済み** (2026-09-07, https://ko1.github.io/koruby_doom/): service worker で
+cross-origin isolation が成立し、ブラウザで実際に遊べる。AOT は 60 fps
+(requestAnimationFrame の上限に当たっているので実力はそれ以上)、koruby インタプリタは
+30 fps 前後。
 
 `.wasm` は `Content-Type: application/wasm` で配れると起動が速い
 (`WebAssembly.compileStreaming` の条件)。合計 78 MB あるので、gzip や brotli を
@@ -68,11 +70,14 @@ AOT の 2 つはプログラムを埋め込んである。インタプリタと 
 
 実測 (DOOM 30 フレーム, wasmtime, 事前コンパイル, 専有機):
 
-| | 実行時間 |
-|---|---|
-| ruby.wasm 3.4.1 | 4,393 ms |
-| koruby インタプリタ | 1,948 ms |
-| koruby AOT | 582 ms |
+| | 実行時間 | fps 換算 | ブラウザ実測 |
+|---|---|---|---|
+| ruby.wasm 3.4.1 | 4,393 ms | 6.8 | — |
+| koruby インタプリタ | 1,948 ms | 15.4 | 約 30 |
+| koruby AOT | 582 ms | 51.5 | 60 (上限) |
+
+ブラウザ (V8) は wasmtime のおよそ 2 倍速い。AOT の 60 fps は
+requestAnimationFrame の上限に当たっている値なので、実力はそれ以上。
 
 ruby.wasm 比 7.5 倍、インタプリタ比 3.3 倍。AOT の新旧差は 588 → 582 ms で
 ばらつきの中 (L1d ミスは 18.8% 減るが、wasm では命令が詰まっていて
