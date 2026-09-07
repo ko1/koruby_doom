@@ -48,18 +48,23 @@ python3 serve.py            # http://127.0.0.1:8000/
 成立させるところだけは目で見ていない。駄目な場合は上記のメッセージが出る。
 
 `.wasm` は `Content-Type: application/wasm` で配れると起動が速い
-(`WebAssembly.compileStreaming` の条件)。合計 40 MB あるので、gzip や brotli を
+(`WebAssembly.compileStreaming` の条件)。合計 78 MB あるので、gzip や brotli を
 有効にしておくとよい (`.wasm` は 3 割ほどに縮む)。
 
-## 3 つの構成
+## 4 つの構成
+
+同じ Ruby のプログラムを 4 つのランタイムで動かす。切り替えると Worker を
+作り直して最初から走る。
 
 | 選択肢 | ファイル | 中身 |
 |---|---|---|
-| AOT 新（穴 + pool） | `doom.wasm` 16.1 MB | site 固有値をノードごとの表から読む |
-| AOT 旧（穴なし） | `doom-old.wasm` 15.3 MB | 実行のたびにノードを辿る |
-| インタプリタ | `koruby-interp.wasm` 4.3 MB | 木を辿るだけ。`doom_web.rb` を `--plain` で |
+| koruby AOT 新（穴 + pool） | `doom.wasm` 16.1 MB | site 固有値をノードごとの表から読む |
+| koruby AOT 旧（穴なし） | `doom-old.wasm` 15.3 MB | 実行のたびにノードを辿る |
+| koruby インタプリタ | `koruby-interp.wasm` 4.3 MB | 木を辿るだけ |
+| ruby.wasm (CRuby 3.4) | `ruby.wasm` 23.8 MB | 比較対象 |
 
-インタプリタだけはプログラムを外から渡すので `doom_web.rb` も要る。
+AOT の 2 つはプログラムを埋め込んである。インタプリタと ruby.wasm は外から
+渡すので `doom_web.rb` も要る。
 
 実測 (DOOM 30 フレーム, wasmtime, 事前コンパイル, 専有機):
 
@@ -99,13 +104,15 @@ worker はブロックしてよく main thread はブロックできない、と
 | `coi-serviceworker.js` | ヘッダを設定できないホスト向け |
 | `serve.py` | ローカル用 (COOP/COEP を返す) |
 | `test_node.mjs` | ブラウザ無しの確認 |
+| `ruby.wasm` | [ruby/ruby.wasm](https://github.com/ruby/ruby.wasm) 2.10.1 の wasip1-minimal ビルド |
 
 ## ブラウザ無しで確かめる
 
 ```sh
 node test_node.mjs 20 new      # AOT 新
 node test_node.mjs 20 old      # AOT 旧
-node test_node.mjs 20 interp   # インタプリタ
+node test_node.mjs 20 interp   # koruby インタプリタ
+node test_node.mjs 20 ruby     # ruby.wasm
 ```
 
 `doom_run.js` をブラウザと同じ経路で駆動し、フレームが空でないこととパレットが

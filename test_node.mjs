@@ -25,6 +25,8 @@ if (!isMainThread) {
     old:    { wasm: 'doom-old.wasm' },
     interp: { wasm: 'koruby-interp.wasm', src: 'doom_web.rb',
               argv: ['koruby', '--plain', '/doom/doom_web.rb'] },
+    ruby:   { wasm: 'ruby.wasm', src: 'doom_web.rb',
+              argv: ['ruby', '/doom/doom_web.rb'] },
   };
   const b = BUILDS[kind];
   if (!b) { console.error('unknown build:', kind); process.exit(1); }

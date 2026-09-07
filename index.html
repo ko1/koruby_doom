@@ -36,12 +36,15 @@
   <span><kbd>←</kbd><kbd>→</kbd> 旋回</span>
 </div>
 <div class="row" id="pick">
-  <label><input type="radio" name="build" value="new" checked> AOT 新（穴 + pool）</label>
-  <label><input type="radio" name="build" value="old"> AOT 旧（穴なし）</label>
-  <label><input type="radio" name="build" value="interp"> インタプリタ</label>
+  <label><input type="radio" name="build" value="new" checked> koruby AOT 新（穴 + pool）</label>
+  <label><input type="radio" name="build" value="old"> koruby AOT 旧（穴なし）</label>
+  <label><input type="radio" name="build" value="interp"> koruby インタプリタ</label>
+  <label><input type="radio" name="build" value="ruby"> ruby.wasm (CRuby 3.4)</label>
 </div>
 <div id="stat">—</div>
 <div class="row" style="max-width: 60rem; display: block; text-align: center; line-height: 1.8">
+  同じ Ruby のプログラムを 4 つのランタイムで動かしています。切り替えると
+  Worker を作り直して最初から走ります。
   レンダラは <a href="https://github.com/nasfive/rb-doom">pure Ruby の DOOM</a>。
   それを koruby_precise が AST 部分評価で C に落とし、wasm32-wasip1 に
   クロスコンパイルしてあります（prelude・プログラム・全メソッド本体を埋め込んだ単一 .wasm）。
@@ -112,8 +115,10 @@ function draw() {
 const BUILDS = {
   new:    { wasm: 'doom.wasm',          label: 'AOT 新（穴 + pool）' },
   old:    { wasm: 'doom-old.wasm',      label: 'AOT 旧（穴なし）' },
-  interp: { wasm: 'koruby-interp.wasm', label: 'インタプリタ', src: 'doom_web.rb',
+  interp: { wasm: 'koruby-interp.wasm', label: 'koruby インタプリタ', src: 'doom_web.rb',
             argv: ['koruby', '--plain', '/doom/doom_web.rb'] },
+  ruby:   { wasm: 'ruby.wasm', label: 'ruby.wasm (CRuby 3.4)', src: 'doom_web.rb',
+            argv: ['ruby', '/doom/doom_web.rb'] },
 };
 
 let worker = null, wadBytes = null, rafId = 0, current = null;
