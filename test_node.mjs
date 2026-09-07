@@ -57,7 +57,7 @@ if (!isMainThread) {
     console.error(`timeout waiting for ${whatFor}`); process.exit(1);
   };
 
-  const keys = ['.', 'w', 'j', 'd', 's', 'l'];
+  const keys = process.env.KEYS ? process.env.KEYS.split('') : ['.', 'w', 'j', 'd', 's', 'l'];
   for (let i = 0; i < frames; i++) {
     tick(keys[i % keys.length]);
     await waitFor(i + 1, `frame ${i + 1}`);
