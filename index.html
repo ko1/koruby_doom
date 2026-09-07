@@ -42,6 +42,9 @@
   <label><input type="radio" name="build" value="ruby"> ruby.wasm (CRuby 3.4)</label>
 </div>
 <div id="stat">—</div>
+<div class="row">
+  <span>ほかにも: <a href="gb/">Game Boy (rubyboy)</a></span>
+</div>
 <div class="row" style="max-width: 60rem; display: block; text-align: center; line-height: 1.8">
   同じ Ruby のプログラムを 4 つのランタイムで動かしています。切り替えると
   Worker を作り直して最初から走ります。
@@ -155,7 +158,9 @@ async function start(kind) {
     if (ev.data.exit !== undefined) { overlay.classList.remove('hidden'); overlay.textContent = `${b.label}: 終了 (${ev.data.exit})`; }
   };
   // The WAD is copied per run: a transferred ArrayBuffer cannot be reused.
-  worker.postMessage({ mod, wad: wadBytes.slice(0), src: srcBytes, argv: b.argv, ctlBuf, fbBuf, palBuf });
+  worker.postMessage({ mod, rom: wadBytes.slice(0), src: srcBytes, argv: b.argv,
+                      mount: '/doom', romName: 'doom1.wad', frameBytes: FRAME,
+                      ctlBuf, fbBuf, palBuf });
 }
 
 for (const el of document.querySelectorAll('input[name=build]')) {

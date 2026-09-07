@@ -15,8 +15,8 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 
 if (!isMainThread) {
   const { mod, wad, src, argv, ctlBuf, fbBuf, palBuf } = workerData;
-  const { runDoom } = await import('./doom_run.js');
-  await runDoom({ mod, wad, src, argv, ctlBuf, fbBuf, palBuf, log: l => console.log('[guest]', l) });
+  const { runGuest } = await import('./run.js');
+  await runGuest({ mod, rom: wad, src, argv, mount: '/doom', romName: 'doom1.wad', frameBytes: FRAME, ctlBuf, fbBuf, palBuf, log: l => console.log('[guest]', l) });
 } else {
   const frames = Number(process.argv[2] || 3);
   const kind = process.argv[3] || 'new';

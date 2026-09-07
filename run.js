@@ -1,16 +1,17 @@
-// Worker-side DOOM runner.
+// Worker-side guest runner, shared by every app on this site.
 //
-// The guest is koruby_precise compiled to wasm32-wasip1 with the whole DOOM
-// engine baked in (--build: prelude + program + every method body as an SD).
-// It talks one byte in / one frame out over stdin and stdout, so all this side
-// has to do is be those two file descriptors.
+// The guest is koruby_precise compiled to wasm32-wasip1 with the whole program
+// baked in (--build: prelude + program + every method body as an SD).  It talks
+// one byte in / one frame out over stdin and stdout, so all this side has to do
+// is be those two file descriptors.
 //
 // Pacing is the host's: the guest's stdin read blocks on Atomics.wait until the
 // page's requestAnimationFrame bumps the tick.  A worker may block; the main
 // thread may not, which is the whole reason the guest runs over here.
 import { WASI, File, PreopenDirectory, Fd, ConsoleStdout, WASIProcExit, wasi } from './shim/index.js';
 
-const FRAME_BYTES = 320 * 240;
+// Set per app by runGuest().
+let FRAME_BYTES = 320 * 240;
 const PAL_BYTES = 768;
 
 // stdin: one command byte per host tick.
@@ -26,7 +27,9 @@ class TickStdin extends Fd {
   }
 }
 
-// stdout: "PAL0" + 768 palette bytes once, then raw frames forever.
+// stdout: "PAL0" + 768 palette bytes once, then raw frames forever.  A frame is
+// FRAME_BYTES: palette indices for DOOM and the NES, 32-bit colour for the
+// Game Boy (whose palette block is all zeroes and unused).
 class FrameStdout extends Fd {
   constructor(ctl, fb, pal) {
     super();
@@ -60,7 +63,9 @@ class FrameStdout extends Fd {
 // `src` is the Ruby program when the module is the plain interpreter (it is
 // then run as `koruby --plain /doom/doom_web.rb`); the AOT modules carry the
 // program inside and ignore it.
-export async function runDoom({ mod, wad, src, argv, ctlBuf, fbBuf, palBuf, log, ready }) {
+export async function runGuest({ mod, rom, src, argv, mount, romName, frameBytes,
+                                ctlBuf, fbBuf, palBuf, log, ready }) {
+  FRAME_BYTES = frameBytes || 320 * 240;
   const ctl = new Int32Array(ctlBuf);
   const fb = new Uint8Array(fbBuf);
   const pal = new Uint8Array(palBuf);
@@ -68,12 +73,13 @@ export async function runDoom({ mod, wad, src, argv, ctlBuf, fbBuf, palBuf, log,
     new TickStdin(ctl),
     new FrameStdout(ctl, fb, pal),
     ConsoleStdout.lineBuffered(l => log && log(l)),
-    new PreopenDirectory('/doom', new Map([
-      ['doom1.wad', new File(wad, { readonly: true })],
-      ...(src ? [['doom_web.rb', new File(src, { readonly: true })]] : []),
+    new PreopenDirectory(mount || '/doom', new Map([
+      [romName || 'doom1.wad', new File(rom, { readonly: true })],
+      ...(src ? [[(argv && argv[argv.length - 1] || '').split('/').pop() || 'prog.rb',
+                 new File(src, { readonly: true })]] : []),
     ])),
   ];
-  const wasi = new WASI(argv || ['doom'], [], fds, { debug: false });
+  const wasi = new WASI(argv || ['guest'], [], fds, { debug: false });
   const inst = await WebAssembly.instantiate(mod, { wasi_snapshot_preview1: wasi.wasiImport });
   ready && ready();
   try { return wasi.start(inst); }

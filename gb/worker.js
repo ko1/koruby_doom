@@ -1,7 +1,5 @@
-// Browser Worker glue: the page hands over the compiled module, the WAD and the
-// three SharedArrayBuffers; everything else is in doom_run.js so the Node test
-// exercises exactly the same file descriptors.
-import { runGuest } from './run.js';
+// Browser Worker glue for the Game Boy page; the runner is shared with DOOM.
+import { runGuest } from '../run.js';
 
 onmessage = async (ev) => {
   const { mod, rom, src, argv, mount, romName, frameBytes, ctlBuf, fbBuf, palBuf } = ev.data;

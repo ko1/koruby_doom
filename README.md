@@ -1,11 +1,17 @@
 # koruby DOOM
 
-**Ruby で書かれた DOOM を、AST の部分評価で C に落とし、wasm にして、ブラウザで遊ぶ。**
+**Ruby で書かれたゲームを、AST の部分評価で C に落とし、wasm にして、ブラウザで遊ぶ。**
 
-同じ 1 本の Ruby プログラムを 4 つのランタイムで走らせ、その場で切り替えて
+同じ 1 本の Ruby プログラムを複数のランタイムで走らせ、その場で切り替えて
 比べられます。
 
-👉 **[遊ぶ](https://ko1.github.io/koruby_doom/)** — `W` `S` 前後 / `A` `D` 横移動 / `←` `→` 旋回
+| | 遊ぶ | 中身 |
+|---|---|---|
+| **DOOM** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/)** | [khasinski/doom](https://github.com/khasinski/doom) — DOOM (1993) の純 Ruby 移植 |
+| **Game Boy** | 👉 **[遊ぶ](https://ko1.github.io/koruby_doom/gb/)** | [sacckey/rubyboy](https://github.com/sacckey/rubyboy) — 純 Ruby の Game Boy エミュレータ |
+
+DOOM: `W` `S` 前後 / `A` `D` 横移動 / `←` `→` 旋回
+Game Boy: `←` `→` `↑` `↓` 十字 / `Z` A / `X` B / `Enter` Start / `Shift` Select
 
 当たり判定・壁ずり・床の高さはエンジン側の `Doom::Game::PlayerPhysics` を
 そのまま使っています (Gosu window から切り出されているので、窓が無くても動く)。
@@ -176,9 +182,10 @@ cp ../rubyharness/apps/doom/doom1.wad <このディレクトリ>/
 | | |
 |---|---|
 | `index.html` | canvas、キー、パレット → RGB、tick ループ、ランタイムの切り替え |
-| `doom_run.js` | 2 つの fd と WASI の設定 (ブラウザと Node で共有) |
 | `worker.js` | ブラウザ側の glue |
 | `doom_web.rb` | バンドル済みの DOOM (インタプリタと ruby.wasm 用) |
+| `run.js` | 2 つの fd と WASI の設定 (DOOM と Game Boy で共有) |
+| `gb/` | Game Boy 版 (rubyboy + Tobu Tobu Girl) |
 | `shim/` | [@bjorn3/browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) |
 | `coi-serviceworker.js` | ヘッダを設定できないホスト向け |
 | `serve.py` | ローカル用 (COOP/COEP を返す) |
@@ -203,6 +210,31 @@ wasm32 では 64 ビットの符号なしリテラルが負になります
 描画は一致しますが、ヘッドレス版の checksum だけが native と食い違います。
 koruby のインタプリタでも旧 AOT でも同じなので、この移植とは別の既存バグです。
 
+## Game Boy 版 (`gb/`)
+
+[rubyboy](https://github.com/sacckey/rubyboy) (MIT) はもともと `EmulatorWasm` を
+持っていて、`step(direction_key, action_key)` が 1 フレーム進めて 160x144 の
+バッファを返します。DOOM のときのように当たり判定を繋ぐ必要はなく、同じ
+「1 バイト入れて 1 フレーム出す」の口を付けるだけで済みました。Worker 側の
+ランナー (`run.js`) は DOOM と共有しています。
+
+ROM は [Tobu Tobu Girl](https://github.com/SimonLarsen/tobu-tobu-girl)、
+自由に配布できる homebrew です。
+
+フレームはパレット indexed ではなく 32bit 色 (`0xAARRGGBB`) がそのまま並ぶので、
+ページ側は `ImageData` にコピーするだけです。
+
+実測 (headless, 30〜40 フレーム):
+
+| | Game Boy | DOOM |
+|---|---|---|
+| koruby AOT | 40 フレーム 0.83 s (48 fps) | 30 フレーム 0.58 s |
+| koruby インタプリタ | 40 フレーム 2.53 s (16 fps) | — |
+| ruby.wasm | 30 フレーム 1.23 s (24 fps) | — |
+
+Game Boy では **ruby.wasm がインタプリタより速い**という逆転が出ています。
+DOOM とは逆で、まだ理由を追っていません。
+
 ## 出どころ
 
 | | |
@@ -211,4 +243,6 @@ koruby のインタプリタでも旧 AOT でも同じなので、この移植�
 | koruby_precise / ASTro | [ko1/astro](https://github.com/ko1/astro) |
 | WASI shim | [@bjorn3/browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim) — MIT / Apache-2.0 (`shim/` に同梱) |
 | ruby.wasm | [ruby/ruby.wasm](https://github.com/ruby/ruby.wasm) 2.10.1 の wasip1-minimal ビルド |
+| Game Boy エミュレータ | [sacckey/rubyboy](https://github.com/sacckey/rubyboy) — MIT |
+| `gb/rom.gb` | [Tobu Tobu Girl](https://github.com/SimonLarsen/tobu-tobu-girl) — 自由に配布できる homebrew |
 | `doom1.wad` | id Software の DOOM シェアウェア WAD (Episode 1) |

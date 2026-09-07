@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Game Boy in pure Ruby, AOT-compiled, in the browser</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0b0d; color: #ddd;
+         font-family: system-ui, sans-serif; display: flex; flex-direction: column;
+         align-items: center; gap: 1rem; padding: 1.5rem 1rem 3rem; }
+  h1 { font-size: 1.15rem; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  #wrap { position: relative; }
+  canvas { width: 640px; max-width: 92vw; aspect-ratio: 160 / 144; display: block;
+           image-rendering: pixelated; background: #000; border: 1px solid #333; }
+  #overlay { position: absolute; inset: 0; display: grid; place-items: center;
+             background: rgba(0,0,0,.72); font-size: .95rem; text-align: center;
+             padding: 1rem; line-height: 1.7; }
+  #overlay.hidden { display: none; }
+  .row { display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center;
+         font-size: .82rem; color: #9a9aa2; }
+  kbd { background: #23232a; border: 1px solid #3a3a44; border-bottom-width: 2px;
+        border-radius: 4px; padding: .05rem .35rem; font-size: .78rem; color: #ddd; }
+  #stat { font-family: ui-monospace, monospace; font-size: .8rem; color: #7d7d86; }
+  a { color: #8ab4f8; }
+</style>
+</head>
+<body>
+<h1>Game Boy — pure Ruby, AOT-compiled by ASTro, running in the browser</h1>
+<div id="wrap">
+  <canvas id="screen" width="160" height="144"></canvas>
+  <div id="overlay">読み込み中…</div>
+</div>
+<div class="row">
+  <span><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 十字キー</span>
+  <span><kbd>Z</kbd> A</span>
+  <span><kbd>X</kbd> B</span>
+  <span><kbd>Enter</kbd> Start</span>
+  <span><kbd>Shift</kbd> Select</span>
+</div>
+<div class="row" id="pick">
+  <label><input type="radio" name="build" value="new" checked> koruby AOT</label>
+  <label><input type="radio" name="build" value="interp"> koruby インタプリタ</label>
+  <label><input type="radio" name="build" value="ruby"> ruby.wasm (CRuby 3.4)</label>
+</div>
+<div id="stat">—</div>
+<div class="row" style="max-width: 60rem; display: block; text-align: center; line-height: 1.8">
+  エミュレータは <a href="https://github.com/sacckey/rubyboy">rubyboy</a> — Game Boy を
+  純粋な Ruby で実装したもの (MIT)。ROM は
+  <a href="https://github.com/SimonLarsen/tobu-tobu-girl">Tobu Tobu Girl</a>、
+  自由に配布できる homebrew です。
+  DOOM のページと同じ仕組みで動いています —
+  <a href="../">そちらもどうぞ</a>。
+</div>
+
+<script src="../coi-serviceworker.js"></script>
+<script type="module">
+const W = 160, H = 144, FRAME = W * H * 4;   // Game Boy の buffer は 32bit 色
+const cv = document.getElementById('screen');
+const ctx = cv.getContext('2d', { alpha: false });
+const img = ctx.createImageData(W, H);
+const overlay = document.getElementById('overlay');
+const stat = document.getElementById('stat');
+
+if (!window.crossOriginIsolated) {
+  overlay.innerHTML = 'SharedArrayBuffer が使えません。<br>' +
+    'ローカルなら <code>python3 serve.py</code>、公開なら COOP/COEP を返すか、' +
+    '同梱の coi-serviceworker.js が効く https で開いてください。';
+  throw new Error('not cross-origin isolated');
+}
+
+const ctlBuf = new SharedArrayBuffer(16);
+const fbBuf  = new SharedArrayBuffer(FRAME);
+const palBuf = new SharedArrayBuffer(768);
+const ctl = new Int32Array(ctlBuf);
+const fb  = new Uint8Array(fbBuf);
+
+// bit 0..3 = Right Left Up Down, bit 4..7 = A B Select Start (pressed = 1).
+const BITS = { ArrowRight: 0, ArrowLeft: 1, ArrowUp: 2, ArrowDown: 3,
+               KeyZ: 4, KeyX: 5, ShiftLeft: 6, ShiftRight: 6, Enter: 7 };
+const held = new Set();
+addEventListener('keydown', e => { if (e.code in BITS) { held.add(BITS[e.code]); e.preventDefault(); } });
+addEventListener('keyup',   e => { if (e.code in BITS) { held.delete(BITS[e.code]); e.preventDefault(); } });
+
+const BUILDS = {
+  new:    { wasm: 'gb.wasm', label: 'koruby AOT' },
+  interp: { wasm: '../koruby-interp.wasm', label: 'koruby インタプリタ', src: 'gb_web.rb',
+            argv: ['koruby', '--plain', '/gb/gb_web.rb'] },
+  ruby:   { wasm: '../ruby.wasm', label: 'ruby.wasm (CRuby 3.4)', src: 'gb_web.rb',
+            argv: ['ruby', '/gb/gb_web.rb'] },
+};
+
+let worker = null, romBytes = null, rafId = 0, sel = BUILDS.new, current = 'new';
+let drawn = 0, lastT = 0, lastN = 0;
+
+function draw() {
+  const n = Atomics.load(ctl, 2);
+  if (n !== drawn) {
+    drawn = n;
+    img.data.set(fb);                       // 0xAARRGGBB little-endian == RGBA bytes
+    ctx.putImageData(img, 0, 0);
+    overlay.classList.add('hidden');
+  }
+  const now = performance.now();
+  if (now - lastT > 500) {
+    const fps = (drawn - lastN) * 1000 / (now - lastT);
+    lastT = now; lastN = drawn;
+    stat.textContent = `${sel.label} — ${fps.toFixed(1)} fps — ${drawn} frames — 160x144`;
+  }
+  let k = 0;
+  for (const b of held) k |= 1 << b;
+  if (k === 0xfe) k = 0;                    // 0xfe is the quit byte
+  Atomics.store(ctl, 1, k);
+  Atomics.add(ctl, 0, 1);
+  Atomics.notify(ctl, 0);
+  rafId = requestAnimationFrame(draw);
+}
+
+async function start(kind) {
+  sel = BUILDS[kind]; current = kind;
+  if (worker) { worker.terminate(); worker = null; }
+  if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  Atomics.store(ctl, 0, 0); Atomics.store(ctl, 1, 0);
+  Atomics.store(ctl, 2, 0); Atomics.store(ctl, 3, 0);
+  drawn = 0; lastN = 0; lastT = 0;
+  overlay.classList.remove('hidden');
+  overlay.textContent = `${sel.label}: wasm を取得中…`;
+
+  const grab = (u) => fetch(u, { cache: 'no-cache' }).then(r => r.arrayBuffer());
+  if (!romBytes) romBytes = await grab('rom.gb');
+  const [wasmBytes, srcBytes] = await Promise.all([
+    grab(sel.wasm),
+    sel.src ? grab(sel.src) : Promise.resolve(null),
+  ]);
+  overlay.textContent = `${sel.label}: wasm をコンパイル中…`;
+  const mod = await WebAssembly.compile(wasmBytes);
+
+  worker = new Worker('worker.js', { type: 'module' });
+  worker.onmessage = (ev) => {
+    if (ev.data.ready) { overlay.textContent = `${sel.label}: 起動中…`; rafId = requestAnimationFrame(draw); }
+    if (ev.data.log) console.log('[guest]', ev.data.log);
+    if (ev.data.error) { overlay.classList.remove('hidden'); overlay.textContent = ev.data.error; }
+    if (ev.data.exit !== undefined) { overlay.classList.remove('hidden'); overlay.textContent = `${sel.label}: 終了 (${ev.data.exit})`; }
+  };
+  worker.postMessage({ mod, rom: romBytes.slice(0), src: srcBytes, argv: sel.argv,
+                       mount: '/gb', romName: 'rom.gb', frameBytes: FRAME,
+                       ctlBuf, fbBuf, palBuf });
+}
+
+for (const el of document.querySelectorAll('input[name=build]')) {
+  el.addEventListener('change', () => { if (el.checked) start(el.value); });
+}
+start('new');
+</script>
+</body>
+</html>
